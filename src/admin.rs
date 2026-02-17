@@ -434,6 +434,12 @@ impl<C: ClientContext + 'static> FromClientConfigAndContext<C> for AdminClient<C
             RDKafkaType::RD_KAFKA_PRODUCER,
             context,
         )?);
+
+        // Enable SASL background callbacks for OAuth token refresh
+        if let Err(e) = client.enable_sasl_background_callbacks() {
+            warn!("Failed to enable SASL background callbacks: {}", e);
+        }
+
         let queue = Arc::new(client.new_native_queue());
         let should_stop = Arc::new(AtomicBool::new(false));
         let handle = start_poll_thread(Arc::clone(&client), queue.clone(), should_stop.clone());
@@ -468,17 +474,26 @@ fn start_poll_thread<C: ClientContext + 'static>(
         .spawn(move || {
             trace!("Admin polling thread loop started");
 
-            // Get the main queue for OAuth token refresh events
+            // Get the SASL queue for OAuth token refresh events (if available)
+            let sasl_queue = client.sasl_queue();
+            if sasl_queue.is_some() {
+                trace!("SASL queue available for OAuth token refresh");
+            }
+
+            // Also get the main queue as fallback
             let main_queue = client.main_queue();
 
             loop {
-                // Poll the main client queue for OAuth token refresh and other events.
-                // For producer-type clients (which AdminClient uses internally),
-                // OAuth events are delivered to the main queue, not the admin-specific queue.
-                let _ = client.poll_event(&main_queue, Duration::from_millis(50));
+                // Poll the SASL queue for OAuth token refresh events
+                if let Some(ref sq) = sasl_queue {
+                    let _ = client.poll_event(sq, Duration::from_millis(10));
+                }
 
-                // Also poll the admin queue for admin operation results
-                let poll_result = client.poll_event(&queue, Duration::from_millis(50));
+                // Poll the main queue for other events
+                let _ = client.poll_event(&main_queue, Duration::from_millis(10));
+
+                // Poll the admin queue for admin operation results
+                let poll_result = client.poll_event(&queue, Duration::from_millis(30));
                 match poll_result {
                     EventPollResult::Event(event) => {
                         // Forward admin operation events to their handlers

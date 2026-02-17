@@ -590,6 +590,27 @@ impl<C: ClientContext> Client<C> {
     pub(crate) fn main_queue(&self) -> NativeQueue {
         unsafe { NativeQueue::from_ptr(rdsys::rd_kafka_queue_get_main(self.native_ptr())).unwrap() }
     }
+
+    /// Returns a NativeQueue for the SASL queue (used for OAuth token refresh events).
+    pub(crate) fn sasl_queue(&self) -> Option<NativeQueue> {
+        unsafe { NativeQueue::from_ptr(rdsys::rd_kafka_queue_get_sasl(self.native_ptr())) }
+    }
+
+    /// Enables SASL background callbacks for this client.
+    /// This allows SASL callbacks (like OAuth token refresh) to be handled in a background thread.
+    pub(crate) fn enable_sasl_background_callbacks(&self) -> Result<(), String> {
+        let err = unsafe { rdsys::rd_kafka_sasl_background_callbacks_enable(self.native_ptr()) };
+        if err.is_null() {
+            Ok(())
+        } else {
+            let err_str = unsafe {
+                let c_str = rdsys::rd_kafka_error_string(err);
+                std::ffi::CStr::from_ptr(c_str).to_string_lossy().into_owned()
+            };
+            unsafe { rdsys::rd_kafka_error_destroy(err) };
+            Err(err_str)
+        }
+    }
 }
 
 pub(crate) type NativeTopic = NativePtr<RDKafkaTopic>;
