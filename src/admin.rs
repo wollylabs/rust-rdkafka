@@ -467,17 +467,18 @@ fn start_poll_thread<C: ClientContext + 'static>(
         .name("admin client polling thread".into())
         .spawn(move || {
             trace!("Admin polling thread loop started");
+
+            // Get the main queue for OAuth token refresh events
+            let main_queue = client.main_queue();
+
             loop {
                 // Poll the main client queue for OAuth token refresh and other events.
                 // For producer-type clients (which AdminClient uses internally),
-                // OAuth events are delivered to the main queue, not the admin queue.
-                unsafe {
-                    rdsys::rd_kafka_poll(client.native_ptr(), 0);
-                }
+                // OAuth events are delivered to the main queue, not the admin-specific queue.
+                let _ = client.poll_event(&main_queue, Duration::from_millis(50));
 
-                // Use poll_event instead of direct queue.poll to handle system events
-                // like OAUTHBEARER token refresh, logging, and statistics
-                let poll_result = client.poll_event(&queue, Duration::from_millis(100));
+                // Also poll the admin queue for admin operation results
+                let poll_result = client.poll_event(&queue, Duration::from_millis(50));
                 match poll_result {
                     EventPollResult::Event(event) => {
                         // Forward admin operation events to their handlers
