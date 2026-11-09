@@ -22,7 +22,9 @@ use futures_util::ready;
 use rdkafka_sys as rdsys;
 use rdkafka_sys::types::*;
 
-use crate::client::{Client, ClientContext, DefaultClientContext, EventPollResult, NativeClient, NativeQueue};
+use crate::client::{
+    Client, ClientContext, DefaultClientContext, EventPollResult, NativeClient, NativeQueue,
+};
 use crate::config::{ClientConfig, FromClientConfig, FromClientConfigAndContext};
 use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::log::{trace, warn};
@@ -417,7 +419,7 @@ impl<C: ClientContext + 'static> FromClientConfigAndContext<C> for AdminClient<C
         // producer, as producer clients are allegedly more lightweight. [0]
         //
         // [0]: https://github.com/confluentinc/confluent-kafka-python/blob/bfb07dfbca47c256c840aaace83d3fe26c587360/confluent_kafka/src/Admin.c#L1492-L1493
-        
+
         // Register events we want to handle in the polling thread
         unsafe {
             rdsys::rd_kafka_conf_set_events(
@@ -427,7 +429,7 @@ impl<C: ClientContext + 'static> FromClientConfigAndContext<C> for AdminClient<C
                     | rdsys::RD_KAFKA_EVENT_OAUTHBEARER_TOKEN_REFRESH,
             )
         };
-        
+
         let client = Arc::new(Client::new(
             config,
             native_config,
@@ -497,8 +499,9 @@ fn start_poll_thread<C: ClientContext + 'static>(
                 match poll_result {
                     EventPollResult::Event(event) => {
                         // Forward admin operation events to their handlers
-                        let tx: Box<oneshot::Sender<NativeEvent>> =
-                            unsafe { IntoOpaque::from_ptr(rdsys::rd_kafka_event_opaque(event.ptr())) };
+                        let tx: Box<oneshot::Sender<NativeEvent>> = unsafe {
+                            IntoOpaque::from_ptr(rdsys::rd_kafka_event_opaque(event.ptr()))
+                        };
                         let _ = tx.send(event);
                     }
                     EventPollResult::EventConsumed => {

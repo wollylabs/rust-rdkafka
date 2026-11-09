@@ -605,7 +605,9 @@ impl<C: ClientContext> Client<C> {
         } else {
             let err_str = unsafe {
                 let c_str = rdsys::rd_kafka_error_string(err);
-                std::ffi::CStr::from_ptr(c_str).to_string_lossy().into_owned()
+                std::ffi::CStr::from_ptr(c_str)
+                    .to_string_lossy()
+                    .into_owned()
             };
             unsafe { rdsys::rd_kafka_error_destroy(err) };
             Err(err_str)

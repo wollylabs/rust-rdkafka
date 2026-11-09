@@ -28,12 +28,12 @@ impl ClientContext for OAuthClientContext {
     ) -> Result<OAuthToken, Box<dyn Error>> {
         // Example token generation (replace with actual OAuth logic)
         println!("Generating OAuth token...");
-        
+
         // In a real implementation, you would:
         // 1. Call your OAuth provider (e.g., Azure AD, Okta, etc.)
         // 2. Get an access token
         // 3. Return it with the appropriate lifetime
-        
+
         Ok(OAuthToken {
             token: "your-oauth-token-here".to_string(),
             principal_name: "your-principal-name".to_string(),
@@ -58,8 +58,7 @@ fn main() {
     // Example: In a real scenario, you would perform actual admin operations
     // like creating topics, deleting topics, etc.
     println!("Admin client is ready to use with OAUTHBEARER authentication");
-    
+
     // The background polling thread will automatically handle
     // OAUTHBEARER token refresh when needed
 }
-
