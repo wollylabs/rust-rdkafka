@@ -63,7 +63,7 @@ impl<C: ClientContext> AdminClient<C> {
 
     /// Returns the `Client` for this admin client.
     pub fn client(&self) -> &Client<C> {
-        &*self.client
+        &self.client
     }
 
     /// Creates new topics according to the provided `NewTopic` specifications.
