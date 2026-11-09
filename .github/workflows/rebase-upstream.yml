@@ -1,0 +1,89 @@
+# rebase-upstream — every week, does the fork still apply on upstream, and does it still work?
+#
+# For upstream's latest release and for upstream's master, ci/rebase-onto-upstream.sh replays
+# the fork's own commits (every commit on master that no upstream branch or tag holds) onto
+# that line, and the job summary says which commit conflicted, on which files, or `none`.
+#
+# A CLEAN REPLAY IS TESTED AND PUBLISHED: upstream's broker-backed suite (test_suite.sh, Kafka
+# in docker) runs on the result, and the result is pushed as wolly/rebased/<target>. That
+# branch is the revision wolly-cluster moves its rdkafka dependency to, which runs
+# cluster-kafka's integration test on real MSK; the fork never builds a test image of its own.
+#
+# A CONFLICT FAILS THE JOB, so a week in which upstream moved past the fork is red on the
+# Actions page rather than silent.
+
+name: rebase-upstream
+
+on:
+  schedule:
+    # Mondays, 05:17 UTC.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: rebase-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rebase:
+    name: rebase onto upstream ${{ matrix.target }}
+    runs-on: ${{ vars.WOLLY_CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 90
+    permissions:
+      # The clean result is pushed as wolly/rebased/<target>.
+      contents: write
+    strategy:
+      fail-fast: false
+      # upstream's suite does not support concurrent runs.
+      max-parallel: 1
+      matrix:
+        target: [release, master]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: replay the fork's commits
+        id: rebase
+        env:
+          RESULT_BRANCH: wolly/rebased/${{ matrix.target }}
+          TARGET: ${{ matrix.target }}
+        run: ci/rebase-onto-upstream.sh "$TARGET" HEAD
+
+      - name: check out the result
+        env:
+          RESULT_BRANCH: wolly/rebased/${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          git checkout --quiet "$RESULT_BRANCH"
+          git submodule update --init
+
+      - name: install the toolchain and the build's system packages
+        run: |
+          set -euo pipefail
+          # upstream's ci.yml builds on 1.85; the runner image's rustup installs it.
+          rustup toolchain install 1.85 --profile minimal
+          rustup default 1.85
+          sudo apt-get update
+          sudo apt-get install -y cmake libcurl4-openssl-dev
+
+      - name: run upstream's suite on the result
+        env:
+          KAFKA_VERSION: "4.0"
+          TERM: xterm-256color
+        run: ./test_suite.sh
+
+      - name: publish the result
+        env:
+          RESULT_BRANCH: wolly/rebased/${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          git push --force origin "refs/heads/${RESULT_BRANCH}:refs/heads/${RESULT_BRANCH}"
+          {
+            echo
+            echo "Published as \`${RESULT_BRANCH}\` at \`$(git rev-parse HEAD)\`: move wolly-cluster's rdkafka revision there to run cluster-kafka's integration test on real MSK."
+          } >> "$GITHUB_STEP_SUMMARY"

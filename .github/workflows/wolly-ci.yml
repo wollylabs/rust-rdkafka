@@ -1,0 +1,67 @@
+# wolly-ci — the fork judged by the Rust CI every wolly repository calls.
+#
+# What CI does is wolly-ci's: this file calls its ci-rust workflow, and changing what a step
+# does is a commit there. Upstream's own workflow (ci.yml) still runs beside it, with Kafka in
+# docker; this one runs offline.
+#
+# THE STEPS ARE THE ONES AN UPSTREAM CRATE CAN ANSWER: fmt, clippy, build, test and doc.
+# wolly's own standards (size, standard, naming, deny, shear, audit) are not asked: this is
+# upstream's code, held to upstream's conventions, and the fork's commits are kept small so
+# they rebase.
+#
+# THE TEST STEP RUNS WHAT NEEDS NO BROKER: the library's unit tests, and the AdminClient's
+# OAUTHBEARER token refresh test, which asserts the refresh callback runs before any broker is
+# reached. The broker-backed suite is upstream's ci.yml, and the real MSK run is wolly-cluster's
+# cluster-kafka integration test, run when wolly-cluster moves its rdkafka revision.
+
+name: wolly-ci
+
+on:
+  push:
+    branches: [master, 'feature/**', 'fix/**']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: wolly-ci-${{ github.ref == 'refs/heads/master' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+# id-token: ci-rust assumes the shared compile cache's role by OIDC, and a called workflow may
+# ask only for what this file grants.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ci:
+    # wolly-ci at a full commit sha, never a tag: the same commit wolly-cluster calls.
+    uses: wollylabs/wolly-ci/.github/workflows/ci-rust.yml@c87d4e90df6fc75119c8ff0402708184b2959f5a
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      runner: ${{ vars.WOLLY_CI_RUNNER || 'ubuntu-latest' }}
+      steps: '["fmt", "clippy", "build", "test", "doc"]'
+      # librdkafka provides OAUTHBEARER only when built with OpenSSL, and the admin refresh
+      # test exists only in a build that has it.
+      features: ssl
+      # upstream's ci.yml lints and builds on 1.85; a newer clippy would judge upstream's code
+      # by lints upstream has not met.
+      toolchain: "1.85"
+      # librdkafka is built from the submodule (rdkafka-sys's build script initialises it),
+      # against the system's OpenSSL and curl.
+      system_packages: build-essential cmake libcurl4-openssl-dev libssl-dev pkg-config
+      test_args: --lib --test test_admin -E kind(lib)|test(=test_admin_client_with_oauthbearer_context)
+      sccache_bucket: ${{ vars.CI_SCCACHE_BUCKET }}
+      sccache_region: ${{ vars.CI_SCCACHE_REGION }}
+      sccache_endpoint: ${{ vars.CI_SCCACHE_ENDPOINT }}
+      sccache_key_prefix: wolly/${{ github.event.repository.name }}/
+      sccache_writer_role: ${{ vars.CI_SCCACHE_WRITER_ROLE }}
+      sccache_reader_role: ${{ vars.CI_SCCACHE_READER_ROLE }}
+      # The crate resolves no private repository.
+      repositories: ""
+    # The organisation's read-only CI App; until its secrets are set, the CI App's.
+    secrets:
+      ci_read_app_id: ${{ secrets.CI_READ_APP_ID || secrets.CI_APP_ID }}
+      ci_read_app_private_key: ${{ secrets.CI_READ_APP_PRIVATE_KEY || secrets.CI_APP_PRIVATE_KEY }}
