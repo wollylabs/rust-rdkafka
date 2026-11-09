@@ -1,0 +1,72 @@
+# wolly-ci — the fork's own light CI: fmt, clippy, build and the tests that need no broker.
+#
+# THIS FORK IS TEMPORARY, AND SO IS THIS FILE. It is kept light on purpose: no coverage, no
+# deny/audit/shear matrix, no compile cache, no fixtures. The fork is public and wolly's shared
+# CI workflows are private, and GitHub lets no public repository call a private one's reusable
+# workflow, so the steps run here, in this file.
+#
+# Upstream's own workflow (ci.yml) still runs beside it, with Kafka in docker; this one runs
+# offline. The broker-backed suite is upstream's ci.yml, the weekly replay onto upstream is
+# rebase-upstream.yml, and the real MSK run is wolly-cluster's cluster-kafka integration test,
+# run when wolly-cluster moves its rdkafka revision.
+
+name: wolly-ci
+
+on:
+  push:
+    branches: [master, 'feature/**', 'fix/**']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: wolly-ci-${{ github.ref == 'refs/heads/master' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+permissions:
+  contents: read
+
+env:
+  # upstream's ci.yml lints and builds on 1.85; a newer clippy would judge upstream's code by
+  # lints upstream has not met.
+  RUST_VERSION: "1.85"
+  # librdkafka provides OAUTHBEARER only when built with OpenSSL, and the admin refresh test
+  # exists only in a build that has it.
+  FEATURES: ssl
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: fmt, clippy, build, test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # librdkafka is built from the submodule, against the system's OpenSSL and curl.
+          submodules: true
+
+      - name: install the toolchain and the build's system packages
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt,clippy
+          rustup default "$RUST_VERSION"
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev libssl-dev pkg-config
+
+      - name: fmt
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --features "$FEATURES" --all-targets -- -D warnings
+
+      - name: build
+        run: cargo build --features "$FEATURES" --all-targets
+
+      # The library's unit tests, and the AdminClient's OAUTHBEARER token refresh test, which
+      # asserts the refresh callback runs before any broker is reached.
+      - name: test
+        run: |
+          set -euo pipefail
+          cargo test --features "$FEATURES" --lib
+          cargo test --features "$FEATURES" --test test_admin -- --exact test_admin_client_with_oauthbearer_context
