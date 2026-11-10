@@ -27,10 +27,9 @@ jobs:
     strategy:
       matrix:
         include:
+          # No Windows leg in this fork: the cmake-build of rdkafka-sys fails
+          # on the windows-2025 image.
           - os: macos-15
-          - os: windows-2025
-            features: cmake-build,libz-static,curl-static
-            rdkafka-sys-features: cmake-build,libz-static,curl-static
           - os: ubuntu-24.04
             features: tracing
           - os: ubuntu-24.04
