@@ -628,3 +628,61 @@ async fn test_event_errors() {
         Err(KafkaError::AdminOp(RDKafkaErrorCode::OperationTimedOut))
     );
 }
+
+/// An AdminClient whose context generates OAUTHBEARER tokens must have its token refresh
+/// callback served: librdkafka asks for the first token as soon as the client is created,
+/// before any broker is reached, so the callback runs with no broker at all. The test fails
+/// when nothing serves the refresh callback for the admin client. librdkafka provides
+/// OAUTHBEARER only when built with OpenSSL, so the test exists in the builds that have it.
+#[cfg(any(feature = "ssl", feature = "ssl-vendored"))]
+#[tokio::test]
+async fn test_admin_client_with_oauthbearer_context() {
+    use rdkafka::client::{ClientContext, OAuthToken};
+    use std::error::Error;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    struct OAuthTestContext {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl ClientContext for OAuthTestContext {
+        const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
+
+        fn generate_oauth_token(
+            &self,
+            _oauthbearer_config: Option<&str>,
+        ) -> Result<OAuthToken, Box<dyn Error>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(OAuthToken {
+                token: "test-token".to_string(),
+                principal_name: "admin-refresh".to_string(),
+                lifetime_ms: 3_600_000,
+            })
+        }
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let admin_client: AdminClient<OAuthTestContext> = ClientConfig::new()
+        .set("bootstrap.servers", get_bootstrap_server())
+        .set("security.protocol", "SASL_PLAINTEXT")
+        .set("sasl.mechanism", "OAUTHBEARER")
+        .create_with_context(OAuthTestContext {
+            calls: Arc::clone(&calls),
+        })
+        .expect("admin client with an OAUTHBEARER context could not be created");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while calls.load(Ordering::SeqCst) == 0 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    assert!(
+        calls.load(Ordering::SeqCst) > 0,
+        "the admin client never called generate_oauth_token within 10s: \
+         its OAUTHBEARER token refresh callback is not served"
+    );
+
+    drop(admin_client);
+}

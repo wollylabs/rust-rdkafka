@@ -6,6 +6,13 @@
 [![coverate](https://codecov.io/gh/fede1024/rust-rdkafka/graphs/badge.svg?branch=master)](https://codecov.io/gh/fede1024/rust-rdkafka/)
 [![Join the chat at https://gitter.im/rust-rdkafka/Lobby](https://badges.gitter.im/rust-rdkafka/Lobby.svg)](https://gitter.im/rust-rdkafka/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
+> **This is wollylabs' temporary fork of [fede1024/rust-rdkafka](https://github.com/fede1024/rust-rdkafka).**
+> It carries the AdminClient OAUTHBEARER token refresh patches, and exists only until
+> [that support](https://github.com/fede1024/rust-rdkafka/pull/801) (or an equivalent) is
+> released upstream; then wolly depends on the upstream release and this fork is retired.
+> Its own CI is `.github/workflows/wolly-ci.yml` (light: fmt, clippy, build, broker-free tests),
+> and `.github/workflows/rebase-upstream.yml` replays its commits onto upstream every week.
+
 A fully asynchronous, [futures]-enabled [Apache Kafka] client
 library for Rust based on [librdkafka].
 
